@@ -1,0 +1,631 @@
+  <!doctype html>
+  <html lang="en">
+  <head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Payment Revenue Incident Console</title>
+  <style>
+  :root {
+    color-scheme: dark;
+    --background: #071018;
+    --panel: #0d1822;
+    --panel-strong: #122230;
+    --border: #243746;
+    --text: #e8f0f6;
+    --muted: #91a4b3;
+    --green: #34d399;
+    --red: #fb7185;
+    --amber: #fbbf24;
+    --blue: #60a5fa;
+  }
+  * {
+    box-sizing: border-box;
+  }
+  body {
+    margin: 0;
+    background:
+      radial-gradient(circle at 80% 0%, #123047 0, transparent 32%),
+      var(--background);
+    color: var(--text);
+    font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+  }
+  main {
+    width: min(1500px, calc(100% - 40px));
+    margin: 0 auto;
+    padding: 28px 0 60px;
+  }
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 24px;
+    margin-bottom: 24px;
+  }
+  .eyebrow {
+    color: var(--blue);
+    font-size: 12px;
+    font-weight: 800;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+  }
+  h1 {
+    margin: 6px 0 0;
+    font-size: clamp(26px, 4vw, 42px);
+    letter-spacing: -0.04em;
+  }
+  .live {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    color: var(--muted);
+    font-size: 13px;
+  }
+  .live-dot {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: var(--green);
+    box-shadow: 0 0 14px var(--green);
+  }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(12, 1fr);
+    gap: 16px;
+  }
+  .panel {
+    background: rgba(13, 24, 34, 0.94);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 20px;
+    box-shadow: 0 18px 50px rgba(0, 0, 0, 0.2);
+  }
+  .summary {
+    grid-column: span 3;
+  }
+  .chart-panel {
+    grid-column: span 8;
+  }
+  .incident-panel {
+    grid-column: span 4;
+  }
+  .agents-panel,
+  .report-panel {
+    grid-column: span 12;
+  }
+  .label {
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+  .metric {
+    margin-top: 10px;
+    font-size: clamp(24px, 3vw, 36px);
+    font-weight: 760;
+    letter-spacing: -0.04em;
+  }
+  .metric.red {
+    color: var(--red);
+  }
+  .metric.green {
+    color: var(--green);
+  }
+  .detail {
+    margin-top: 7px;
+    color: var(--muted);
+    font-size: 13px;
+  }
+  .panel-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 18px;
+  }
+  .panel-heading h2 {
+    margin: 0;
+    font-size: 18px;
+  }
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 6px 10px;
+    font-size: 12px;
+    font-weight: 800;
+    text-transform: uppercase;
+  }
+  .badge.anomaly,
+  .badge.failed {
+    color: var(--red);
+    border-color: rgba(251, 113, 133, 0.55);
+    background: rgba(251, 113, 133, 0.1);
+  }
+  .badge.healthy,
+  .badge.completed {
+    color: var(--green);
+    border-color: rgba(52, 211, 153, 0.55);
+    background: rgba(52, 211, 153, 0.1);
+  }
+  .badge.in_progress,
+  .badge.active {
+    color: var(--amber);
+    border-color: rgba(251, 191, 36, 0.55);
+    background: rgba(251, 191, 36, 0.1);
+  }
+  .badge.waiting,
+  .badge.unknown {
+    color: var(--muted);
+  }
+  #chart {
+    display: block;
+    width: 100%;
+    height: 330px;
+  }
+  .legend {
+    display: flex;
+    gap: 20px;
+    color: var(--muted);
+    font-size: 12px;
+  }
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+  }
+  .legend-line {
+    width: 24px;
+    height: 3px;
+    border-radius: 2px;
+  }
+  .incident-list {
+    display: grid;
+    gap: 14px;
+  }
+  .incident-row {
+    padding-bottom: 14px;
+    border-bottom: 1px solid var(--border);
+  }
+  .incident-row:last-child {
+    padding-bottom: 0;
+    border-bottom: 0;
+  }
+  .incident-value {
+    margin-top: 6px;
+    font-size: 14px;
+    overflow-wrap: anywhere;
+  }
+  .agent-flow {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+    position: relative;
+  }
+  .agent {
+    background: var(--panel-strong);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 18px;
+  }
+  .agent-top {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+  }
+  .agent-icon {
+    display: grid;
+    width: 40px;
+    height: 40px;
+    place-items: center;
+    border-radius: 11px;
+    background: #182f41;
+    font-size: 19px;
+  }
+  .agent h3 {
+    margin: 14px 0 5px;
+    font-size: 16px;
+  }
+  .agent p {
+    margin: 0;
+    color: var(--muted);
+    font-size: 13px;
+    line-height: 1.5;
+  }
+  .correlation {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 18px auto 0;
+    width: fit-content;
+    border: 1px solid rgba(96, 165, 250, 0.5);
+    border-radius: 999px;
+    padding: 9px 14px;
+    color: var(--blue);
+    background: rgba(96, 165, 250, 0.08);
+    font-size: 13px;
+    font-weight: 700;
+  }
+  .report {
+    max-height: 620px;
+    overflow: auto;
+    margin: 0;
+    border-radius: 12px;
+    padding: 22px;
+    background: #071018;
+    color: #c9d7e1;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    font: 13px/1.65 ui-monospace, SFMono-Regular, Consolas, monospace;
+  }
+  .error {
+    display: none;
+    margin-bottom: 16px;
+    border: 1px solid rgba(251, 113, 133, 0.5);
+    border-radius: 12px;
+    padding: 13px;
+    color: var(--red);
+    background: rgba(251, 113, 133, 0.08);
+  }
+  @media (max-width: 950px) {
+    .summary {
+      grid-column: span 6;
+    }
+    .chart-panel,
+    .incident-panel {
+      grid-column: span 12;
+    }
+    .agent-flow {
+      grid-template-columns: 1fr;
+    }
+  }
+  @media (max-width: 560px) {
+    main {
+      width: min(100% - 22px, 1500px);
+    }
+    header {
+      align-items: flex-start;
+      flex-direction: column;
+    }
+    .summary {
+      grid-column: span 12;
+    }
+  }
+  </style>
+  </head>
+  <body>
+  <main>
+  <header>
+  <div>
+  <div class="eyebrow">Autonomous data operations</div>
+  <h1>Payment Revenue Incident Console</h1>
+  </div>
+  <div class="live">
+  <span class="live-dot"></span>
+  <span id="updated">Connecting…</span>
+  </div>
+  </header>
+
+  <div id="error" class="error"></div>
+
+  <section class="grid">
+  <article class="panel summary">
+  <div class="label">System status</div>
+  <div id="system-status" class="metric">—</div>
+  <div id="status-detail" class="detail">Loading detector result</div>
+  </article>
+
+  <article class="panel summary">
+  <div class="label">Revenue discrepancy</div>
+  <div id="impact" class="metric red">—</div>
+  <div class="detail">Expected minus reported</div>
+  </article>
+
+  <article class="panel summary">
+  <div class="label">Affected payments</div>
+  <div id="affected" class="metric">—</div>
+  <div class="detail">Card provider payload v2</div>
+  </article>
+
+  <article class="panel summary">
+  <div class="label">Reported / expected</div>
+  <div id="ratio" class="metric">—</div>
+  <div class="detail">Current six-hour card window</div>
+  </article>
+
+  <article class="panel chart-panel">
+  <div class="panel-heading">
+  <h2>Card revenue</h2>
+  <div class="legend">
+  <span class="legend-item">
+  <span class="legend-line" style="background:#60a5fa"></span>
+  Expected
+  </span>
+  <span class="legend-item">
+  <span class="legend-line" style="background:#fb7185"></span>
+  Reported
+  </span>
+  </div>
+  </div>
+  <svg id="chart" role="img" aria-label="Expected and reported card revenue"></svg>
+  </article>
+
+  <article class="panel incident-panel">
+  <div class="panel-heading">
+  <h2>Incident lineage</h2>
+  <span id="alert-badge" class="badge unknown">Loading</span>
+  </div>
+  <div class="incident-list">
+  <div class="incident-row">
+  <div class="label">Run ID</div>
+  <div id="run-id" class="incident-value">—</div>
+  </div>
+  <div class="incident-row">
+  <div class="label">Deployed commit</div>
+  <div id="commit-sha" class="incident-value">—</div>
+  </div>
+  <div class="incident-row">
+  <div class="label">Latest data hour</div>
+  <div id="latest-hour" class="incident-value">—</div>
+  </div>
+  <div class="incident-row">
+  <div class="label">Detection rule</div>
+  <div class="incident-value">
+  Six-hour trend plus payment reconciliation
+  </div>
+  </div>
+  </div>
+  </article>
+
+  <article class="panel agents-panel">
+  <div class="panel-heading">
+  <h2>Parallel agent investigation</h2>
+  <span id="workflow-badge" class="badge waiting">Waiting</span>
+  </div>
+  <div class="agent-flow">
+  <div class="agent">
+  <div class="agent-top">
+  <div class="agent-icon">▦</div>
+  <span id="databricks-status" class="badge waiting">Waiting</span>
+  </div>
+  <h3>Databricks investigator</h3>
+  <p>Checks financial reconciliation, affected cohorts, totals, and run lineage.</p>
+  </div>
+
+  <div class="agent">
+  <div class="agent-top">
+  <div class="agent-icon">☁</div>
+  <span id="aws-status" class="badge waiting">Waiting</span>
+  </div>
+  <h3>AWS investigator</h3>
+  <p>Checks the exact Lambda run manifest, deployed commit, and S3 artifacts.</p>
+  </div>
+
+  <div class="agent">
+  <div class="agent-top">
+  <div class="agent-icon">⌘</div>
+  <span id="github-status" class="badge waiting">Waiting</span>
+  </div>
+  <h3>GitHub investigator</h3>
+  <p>Compares the deployed commit with the healthy tagged implementation.</p>
+  </div>
+  </div>
+  <div class="correlation">
+  Main agent correlates run ID, commit SHA, and financial impact
+  </div>
+  </article>
+
+  <article class="panel report-panel">
+  <div class="panel-heading">
+  <h2>Correlated incident report</h2>
+  <span id="verification-status" class="badge waiting">Waiting</span>
+  </div>
+  <pre id="report" class="report">No completed report is available yet.</pre>
+  </article>
+  </section>
+  </main>
+
+  <script>
+  const money = cents =>
+    new Intl.NumberFormat("en-SG", {
+      style: "currency",
+      currency: "SGD"
+    }).format((Number(cents) || 0) / 100);
+
+  const escapeText = value =>
+    value === null || value === undefined || value === ""
+      ? "—"
+      : String(value);
+
+  function setBadge(id, status) {
+    const element = document.getElementById(id);
+    const normalized = String(status || "waiting").toLowerCase();
+    element.className = `badge ${normalized}`;
+    element.textContent = normalized.replaceAll("_", " ");
+  }
+
+  function drawChart(rows) {
+    const svg = document.getElementById("chart");
+    const cardRows = rows
+      .filter(row => row.payment_method === "card")
+      .slice(-72);
+
+    const width = 900;
+    const height = 330;
+    const padding = {left: 64, right: 22, top: 18, bottom: 42};
+    const plotWidth = width - padding.left - padding.right;
+    const plotHeight = height - padding.top - padding.bottom;
+
+    svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
+
+    if (!cardRows.length) {
+      svg.innerHTML =
+        '<text x="450" y="165" fill="#91a4b3" text-anchor="middle">No revenue data</text>';
+      return;
+    }
+
+    const maximum = Math.max(
+      1,
+      ...cardRows.flatMap(row => [
+        Number(row.expected_revenue_cents),
+        Number(row.reported_revenue_cents)
+      ])
+    );
+
+    const x = index =>
+      padding.left +
+      index * plotWidth / Math.max(cardRows.length - 1, 1);
+
+    const y = value =>
+      padding.top + plotHeight -
+      Number(value) / maximum * plotHeight;
+
+    const points = field =>
+      cardRows.map(
+        (row, index) => `${x(index)},${y(row[field])}`
+      ).join(" ");
+
+    const grid = [0, 0.25, 0.5, 0.75, 1].map(fraction => {
+      const gridY = padding.top + plotHeight * (1 - fraction);
+      const label = money(maximum * fraction);
+
+      return `
+        <line x1="${padding.left}" y1="${gridY}"
+          x2="${width - padding.right}" y2="${gridY}"
+          stroke="#243746" stroke-width="1"/>
+        <text x="${padding.left - 10}" y="${gridY + 4}"
+          fill="#91a4b3" font-size="10" text-anchor="end">
+          ${label}
+        </text>
+      `;
+    }).join("");
+
+    const firstHour = new Date(cardRows[0].hour).toLocaleString();
+    const lastHour = new Date(
+      cardRows[cardRows.length - 1].hour
+    ).toLocaleString();
+
+    svg.innerHTML = `
+      ${grid}
+      <polyline points="${points("expected_revenue_cents")}"
+        fill="none" stroke="#60a5fa" stroke-width="3"
+        stroke-linecap="round" stroke-linejoin="round"/>
+      <polyline points="${points("reported_revenue_cents")}"
+        fill="none" stroke="#fb7185" stroke-width="3"
+        stroke-linecap="round" stroke-linejoin="round"/>
+      <text x="${padding.left}" y="${height - 12}"
+        fill="#91a4b3" font-size="10">${firstHour}</text>
+      <text x="${width - padding.right}" y="${height - 12}"
+        fill="#91a4b3" font-size="10" text-anchor="end">
+        ${lastHour}
+      </text>
+    `;
+  }
+
+  async function refresh() {
+    const errorBox = document.getElementById("error");
+
+    try {
+      const response = await fetch(
+        `/api/dashboard?timestamp=${Date.now()}`,
+        {cache: "no-store"}
+      );
+
+      if (!response.ok) {
+        throw new Error(`Dashboard API returned ${response.status}`);
+      }
+
+      const data = await response.json();
+      const alert = data.alert || {};
+      const anomaly = (alert.anomalies || [])[0] || {};
+      const investigation = data.investigation || {};
+      const tools = investigation.tools || {};
+      const status = alert.status || "unknown";
+
+      errorBox.style.display = "none";
+
+      const systemStatus = document.getElementById("system-status");
+      systemStatus.textContent = status.toUpperCase();
+      systemStatus.className =
+        `metric ${status === "anomaly" ? "red" : "green"}`;
+
+      document.getElementById("status-detail").textContent =
+        status === "anomaly"
+          ? "Card revenue discrepancy detected"
+          : "Revenue checks are within thresholds";
+
+      document.getElementById("impact").textContent =
+        money(anomaly.current_difference_cents);
+
+      document.getElementById("affected").textContent =
+        Number(anomaly.current_mismatch_count || 0).toLocaleString();
+
+      document.getElementById("ratio").textContent =
+        anomaly.reconciliation_ratio === undefined
+          ? "—"
+          : `${(Number(anomaly.reconciliation_ratio) * 100).toFixed(1)}%`;
+
+      document.getElementById("run-id").textContent =
+        escapeText(alert.run_id);
+
+      document.getElementById("commit-sha").textContent =
+        alert.commit_sha
+          ? alert.commit_sha.slice(0, 12)
+          : "—";
+
+      document.getElementById("latest-hour").textContent =
+        escapeText(alert.latest_data_hour);
+
+      setBadge("alert-badge", status);
+      setBadge(
+        "databricks-status",
+        tools.investigate_databricks
+      );
+      setBadge(
+        "aws-status",
+        tools.investigate_aws
+      );
+      setBadge(
+        "github-status",
+        tools.investigate_github
+      );
+      setBadge(
+        "verification-status",
+        tools.verify_financial_impact
+      );
+
+      const report = investigation.report;
+      setBadge(
+        "workflow-badge",
+        report ? "completed" : (
+          investigation.exists ? "in_progress" : "waiting"
+        )
+      );
+
+      document.getElementById("report").textContent =
+        report || "No completed report is available yet.";
+
+      document.getElementById("updated").textContent =
+        `Live · updated ${new Date(data.generated_at).toLocaleTimeString()}`;
+
+      if (data.databricks_error) {
+        errorBox.textContent =
+          `Databricks: ${data.databricks_error}`;
+        errorBox.style.display = "block";
+      }
+
+      drawChart(data.revenue || []);
+    } catch (error) {
+      errorBox.textContent = error.message;
+      errorBox.style.display = "block";
+      document.getElementById("updated").textContent =
+        "Connection interrupted";
+    }
+  }
+
+  refresh();
+  setInterval(refresh, 5000);
+  </script>
+  </body>
+  </html>
