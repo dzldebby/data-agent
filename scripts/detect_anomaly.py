@@ -6,30 +6,22 @@ from pathlib import Path
 from databricks import sql
 from dotenv import load_dotenv
 
+
 project_dir = Path(__file__).resolve().parents[1]
-output_path = (
-    project_dir
-    / "data"
-    / "anomaly_status.json"
-)
+output_path = project_dir / "data" / "anomaly_status.json"
 
 load_dotenv(project_dir / ".env")
 
-host = os.environ["DATABRICKS_HOST"]
-token = os.environ["DATABRICKS_TOKEN"]
-warehouse_id = os.environ[
-    "DATABRICKS_WAREHOUSE_ID"
-]
-
 server_hostname = (
-    host
+    os.environ["DATABRICKS_HOST"]
     .removeprefix("https://")
     .rstrip("/")
 )
 http_path = (
-    f"/sql/1.0/warehouses/{warehouse_id}"
+    "/sql/1.0/warehouses/"
+    + os.environ["DATABRICKS_WAREHOUSE_ID"]
 )
-
+token = os.environ["DATABRICKS_TOKEN"]
 threshold_ratio = 0.50
 
 query = """
@@ -84,12 +76,16 @@ SELECT
             ELSE 0
         END
     ) AS previous_reported_cents,
-    latest_hour
+    latest_hour,
+    run_id,
+    commit_sha
 FROM workspace.default.current_hourly_revenue
 CROSS JOIN bounds
 GROUP BY
     payment_method,
-    latest_hour
+    latest_hour,
+    run_id,
+    commit_sha
 ORDER BY payment_method
 """
 
@@ -102,6 +98,35 @@ with sql.connect(
         cursor.execute(query)
         rows = cursor.fetchall()
 
+if not rows:
+    raise RuntimeError(
+        "No hourly revenue data found. No new alert was written."
+    )
+
+lineage = {(row[7], row[8]) for row in rows}
+
+if len(lineage) != 1:
+    raise RuntimeError(
+        "Current revenue contains multiple runs or commits. "
+        "No new alert was written."
+    )
+
+run_id, commit_sha = next(iter(lineage))
+
+if not run_id or not commit_sha:
+    raise RuntimeError(
+        "Revenue data is missing run_id or commit_sha. "
+        "No new alert was written."
+    )
+
+latest_data_hour = rows[0][6]
+
+if latest_data_hour is None:
+    raise RuntimeError(
+        "Revenue data has no valid hourly timestamp. "
+        "No new alert was written."
+    )
+
 results = []
 anomalies = []
 
@@ -113,38 +138,25 @@ for (
     current_mismatches,
     previous_reported,
     latest_hour,
+    row_run_id,
+    row_commit_sha,
 ) in rows:
-    current_reported = int(
-        current_reported or 0
-    )
-    current_expected = int(
-        current_expected or 0
-    )
-    current_difference = int(
-        current_difference or 0
-    )
-    current_mismatches = int(
-        current_mismatches or 0
-    )
-    previous_reported = int(
-        previous_reported or 0
-    )
+    current_reported = int(current_reported or 0)
+    current_expected = int(current_expected or 0)
+    current_difference = int(current_difference or 0)
+    current_mismatches = int(current_mismatches or 0)
+    previous_reported = int(previous_reported or 0)
 
-    if previous_reported > 0:
-        trend_ratio = (
-            current_reported
-            / previous_reported
-        )
-    else:
-        trend_ratio = None
-
-    if current_expected > 0:
-        reconciliation_ratio = (
-            current_reported
-            / current_expected
-        )
-    else:
-        reconciliation_ratio = None
+    trend_ratio = (
+        current_reported / previous_reported
+        if previous_reported > 0
+        else None
+    )
+    reconciliation_ratio = (
+        current_reported / current_expected
+        if current_expected > 0
+        else None
+    )
 
     trend_anomaly = (
         trend_ratio is not None
@@ -154,46 +166,27 @@ for (
         current_mismatches > 0
         or current_difference != 0
     )
-    is_anomaly = (
-        trend_anomaly
-        or reconciliation_anomaly
-    )
+    is_anomaly = trend_anomaly or reconciliation_anomaly
 
     result = {
         "payment_method": payment_method,
-        "current_reported_cents": (
-            current_reported
-        ),
-        "current_expected_cents": (
-            current_expected
-        ),
-        "current_difference_cents": (
-            current_difference
-        ),
-        "current_mismatch_count": (
-            current_mismatches
-        ),
-        "previous_reported_cents": (
-            previous_reported
-        ),
+        "current_reported_cents": current_reported,
+        "current_expected_cents": current_expected,
+        "current_difference_cents": current_difference,
+        "current_mismatch_count": current_mismatches,
+        "previous_reported_cents": previous_reported,
         "trend_ratio": (
             round(trend_ratio, 4)
             if trend_ratio is not None
             else None
         ),
         "reconciliation_ratio": (
-            round(
-                reconciliation_ratio,
-                4,
-            )
-            if reconciliation_ratio
-            is not None
+            round(reconciliation_ratio, 4)
+            if reconciliation_ratio is not None
             else None
         ),
         "trend_anomaly": trend_anomaly,
-        "reconciliation_anomaly": (
-            reconciliation_anomaly
-        ),
+        "reconciliation_anomaly": reconciliation_anomaly,
         "is_anomaly": is_anomaly,
     }
 
@@ -209,63 +202,47 @@ for (
     )
     reconciliation_display = (
         f"{reconciliation_ratio:.1%}"
-        if reconciliation_ratio
-        is not None
+        if reconciliation_ratio is not None
         else "unavailable"
     )
 
     print(
         f"{payment_method}: "
-        f"reported SGD "
-        f"{current_reported / 100:,.2f}, "
-        f"expected SGD "
-        f"{current_expected / 100:,.2f}, "
-        f"difference SGD "
-        f"{current_difference / 100:,.2f}, "
-        f"previous SGD "
-        f"{previous_reported / 100:,.2f}, "
+        f"reported SGD {current_reported / 100:,.2f}, "
+        f"expected SGD {current_expected / 100:,.2f}, "
+        f"difference SGD {current_difference / 100:,.2f}, "
+        f"previous SGD {previous_reported / 100:,.2f}, "
         f"trend {trend_display}, "
-        f"reconciled "
-        f"{reconciliation_display}, "
-        f"mismatches "
-        f"{current_mismatches}"
+        f"reconciled {reconciliation_display}, "
+        f"mismatches {current_mismatches}"
     )
 
 status = {
-    "checked_at": datetime.now(
-        timezone.utc
-    ).isoformat(),
-    "latest_data_hour": (
-        rows[0][6].isoformat()
-        if rows
-        else None
-    ),
+    "run_id": run_id,
+    "commit_sha": commit_sha,
+    "checked_at": datetime.now(timezone.utc).isoformat(),
+    "latest_data_hour": latest_data_hour.isoformat(),
     "comparison_hours": 6,
     "threshold_ratio": threshold_ratio,
-    "status": (
-        "anomaly"
-        if anomalies
-        else "healthy"
-    ),
+    "status": "anomaly" if anomalies else "healthy",
     "results": results,
     "anomalies": anomalies,
 }
 
-output_path.parent.mkdir(
-    parents=True,
-    exist_ok=True,
-)
-output_path.write_text(
-    json.dumps(
-        status,
-        indent=2,
-    ) + "\n",
+output_path.parent.mkdir(parents=True, exist_ok=True)
+
+temporary_path = output_path.with_suffix(".json.tmp")
+temporary_path.write_text(
+    json.dumps(status, indent=2) + "\n",
     encoding="utf-8",
 )
+temporary_path.replace(output_path)
+
+print(f"Run: {run_id}")
+print(f"Commit: {commit_sha}")
 
 if anomalies:
     print("Status: ANOMALY")
-
     for anomaly in anomalies:
         print(
             "Detected discrepancy for "
