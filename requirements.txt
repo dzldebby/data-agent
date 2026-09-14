@@ -1,0 +1,10 @@
+# Direct dependencies; not a reproducible lockfile of the demo environment.
+# OpenAI must expose beta.agents.sessions for this project.
+boto3
+databricks-sdk
+databricks-sql-connector
+fastapi
+mcp==2.2.0
+openai
+python-dotenv
+uvicorn
