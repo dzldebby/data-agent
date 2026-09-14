@@ -8,6 +8,7 @@ from databricks import sql
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
+from investigation_steps import read_steps
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -195,16 +196,17 @@ def investigation_snapshot(
 
     tools = tool_activity(events_path)
 
-    if report:
-        for name in tools:
-            if tools[name] == "waiting":
-                tools[name] = "completed"
+    steps = read_steps(run_id)
+    for step in steps:
+        if step["tool"] in tools:
+            tools[step["tool"]] = step["status"]
 
     return {
         "exists": True,
         "run_id": run_id,
         "state": state,
         "tools": tools,
+        "steps": steps,
         "report": report,
         "directory": str(directory),
     }

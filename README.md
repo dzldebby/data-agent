@@ -50,7 +50,9 @@ flowchart TD
 | Git investigator | What changed in the deployed code? | Recorded commit compared with the healthy tag in a local checkout of the GitHub repository |
 | Main agent | Do these findings describe the same incident, and what do they establish? | Matching run IDs and commit SHAs, investigator findings and Python verification |
 
-The main agent is instructed to start all three investigators before waiting, give each its assigned tool and exact run ID, then call `verify_financial_impact(run_id)` itself. It must report conflicting or missing evidence instead of inventing a complete explanation.
+The main agent starts three investigators. Databricks begins with a payment-method comparison and chooses a provider-version breakdown or samples based on what it finds. Git first lists changed files. The main agent then passes the affected cohort to the existing Git investigator for a focused code review, before calling `verify_financial_impact(run_id)` itself. Missing or conflicting evidence must be reported explicitly.
+
+The dashboard shows the actual sequence of evidence requests and findings. A persistent, per-run tool-call ceiling bounds evidence access. See [adaptive investigation and live acceptance checks](docs/adaptive-investigation.md).
 
 MCP exposes the evidence functions. The Agents API runs the coordinated agent investigation. The underlying SQL, S3 reads and Git commands remain ordinary application code.
 
@@ -131,7 +133,8 @@ Databricks is a design choice, not a requirement for all such systems: reconcili
 | `scripts/sync_pipeline.py` | Download new run artifacts and invoke the Databricks loader |
 | `scripts/load_databricks.py` | Load records, create reconciliation tables and current-run views |
 | `scripts/detect_anomaly.py` | Six-hour trend and reconciliation checks |
-| `scripts/evidence_mcp.py` | Four read-only, run-scoped evidence tools |
+| `scripts/evidence_mcp.py` | Four read-only, run-scoped evidence tools with selectable drill-downs |
+| `scripts/investigation_steps.py` | Evidence summaries, persistent call budget and dashboard trail |
 | `scripts/run_agents.py` | Managed session, investigator instructions, events and report storage |
 | `scripts/watch_incidents.py` | Poll, synchronize, detect and investigate |
 | `scripts/dashboard_api.py` | FastAPI dashboard endpoints |

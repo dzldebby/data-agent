@@ -12,6 +12,7 @@ import boto3
 from databricks import sql
 from dotenv import load_dotenv
 from mcp.server import MCPServer
+from investigation_steps import audit_call, financial_breakdown
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -229,8 +230,9 @@ def summarize(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 @mcp.tool()
-def investigate_databricks(run_id: str) -> dict[str, Any]:
-    """Inspect reconciliation for the exact run identified by the alert."""
+@audit_call
+def investigate_databricks(run_id: str, level: str = "method", payment_method: str = "", provider_version: str = "") -> dict[str, Any]:
+    """Start at method; choose version or samples based on evidence. Filter using returned cohort names."""
     rows = reconciliation_rows(run_id)
 
     pipeline_runs = query_rows(
@@ -247,19 +249,13 @@ WHERE run_id = '{validate_run_id(run_id)}'
     if pipeline_runs[0]["commit_sha"] != rows[0]["commit_sha"]:
         raise RuntimeError("Pipeline and reconciliation commits disagree.")
 
-    mismatches = [
-        row for row in rows
-        if row["expected_amount_cents"] != row["reported_amount_cents"]
-    ]
-
     return {
         "source": "Databricks",
         "scope": "Full requested run",
         "run_id": run_id,
         "commit_sha": rows[0]["commit_sha"],
         "pipeline_run": pipeline_runs[0],
-        "reconciliation_by_cohort": summarize(rows),
-        "mismatch_samples": mismatches[:10],
+        **financial_breakdown(rows, level, payment_method, provider_version),
         "limitation": (
             "Provider records are the baseline. "
             "Actual customer charges are not independently verified."
@@ -268,6 +264,7 @@ WHERE run_id = '{validate_run_id(run_id)}'
 
 
 @mcp.tool()
+@audit_call
 def investigate_aws(run_id: str) -> dict[str, Any]:
     """Read the exact run's immutable S3 manifest and output metadata."""
     evidence = read_manifest(run_id)
@@ -302,6 +299,7 @@ def investigate_aws(run_id: str) -> dict[str, Any]:
         "source": "AWS S3",
         **evidence,
         "output_artifacts": artifacts,
+        "step_summary": "Run manifest and output objects exist; deployed commit " + evidence["commit_sha"][:12],
         "interpretation": (
             "The run manifest and output objects exist. The pipeline "
             "writes the manifest after its outputs. This supports "
@@ -326,8 +324,9 @@ def run_git(*arguments: str) -> str:
 
 
 @mcp.tool()
-def investigate_github(run_id: str) -> dict[str, Any]:
-    """Inspect the local Git history at the exact run's deployed SHA."""
+@audit_call
+def investigate_github(run_id: str, file_path: str = "") -> dict[str, Any]:
+    """List changed source files first. Then inspect one returned file based on the affected cohort."""
     evidence = read_manifest(run_id)
     commit = evidence["commit_sha"]
 
@@ -343,6 +342,9 @@ def investigate_github(run_id: str) -> dict[str, Any]:
         "healthy-reconciliation-baseline^{commit}",
     )
 
+    changed_paths = run_git("diff", "--name-only", baseline, commit, "--", "app", "scripts").splitlines()
+    if file_path and (file_path not in changed_paths or not re.fullmatch(r"(?:app|scripts)/[A-Za-z0-9_./-]+\.py", file_path) or ".." in file_path.split("/")):
+        raise ValueError("Choose a changed Python source path returned by the overview")
     diff = run_git(
         "diff",
         "--no-ext-diff",
@@ -351,15 +353,16 @@ def investigate_github(run_id: str) -> dict[str, Any]:
         baseline,
         commit,
         "--",
-        "app",
-        "scripts",
-    )
+        file_path,
+    ) if file_path else ""
 
     return {
         "source": "Local checkout of the GitHub repository",
         "run_id": run_id,
         "commit_sha": commit,
         "healthy_commit_sha": baseline,
+        "changed_source_files": changed_paths,
+        "step_summary": ("Reviewed deployed changes in " + file_path) if file_path else f"Identified {len(changed_paths)} changed source files; awaiting focused review.",
         "commit_metadata": run_git(
             "show", "--no-patch", "--format=fuller", commit
         ),
@@ -372,6 +375,7 @@ def investigate_github(run_id: str) -> dict[str, Any]:
 
 
 @mcp.tool()
+@audit_call
 def verify_financial_impact(run_id: str) -> dict[str, Any]:
     """Cross-check amounts using Python arithmetic for the exact run."""
     rows = reconciliation_rows(run_id)
@@ -394,6 +398,7 @@ def verify_financial_impact(run_id: str) -> dict[str, Any]:
         "run_id": run_id,
         "commit_sha": rows[0]["commit_sha"],
         "status": "IMPACT_CONFIRMED" if affected else "NO_IMPACT",
+        "step_summary": f"Python cross-check complete: {sum(c['mismatch_count'] for c in affected)} mismatched payments.",
         "totals_by_currency": [
             {
                 "currency": currency,

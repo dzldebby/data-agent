@@ -380,7 +380,7 @@
 
   <article class="panel agents-panel">
   <div class="panel-heading">
-  <h2>Parallel agent investigation</h2>
+  <h2>Adaptive agent investigation</h2>
   <span id="workflow-badge" class="badge waiting">Waiting</span>
   </div>
   <div class="agent-flow">
@@ -414,6 +414,9 @@
   <div class="correlation">
   Main agent correlates run ID, commit SHA, and financial impact
   </div>
+  <h3>Evidence checks</h3>
+  <p>Actual tool requests and findings, in execution order.</p>
+  <ol id="evidence-steps" style="line-height:1.7;padding-left:24px"></ol>
   </article>
 
   <article class="panel report-panel">
@@ -543,6 +546,16 @@
       const anomaly = (alert.anomalies || [])[0] || {};
       const investigation = data.investigation || {};
       const tools = investigation.tools || {};
+      const stepList = document.getElementById("evidence-steps");
+      stepList.replaceChildren();
+      for (const step of investigation.steps || []) {
+        const item = document.createElement("li");
+        const args = Object.entries(step.arguments || {})
+          .filter(([, value]) => value !== "")
+          .map(([key, value]) => `${key}: ${value}`).join(", ");
+        item.textContent = `${step.tool}${args ? " · " + args : ""} — ${step.status}. ${step.summary || ""}`;
+        stepList.appendChild(item);
+      }
       const status = alert.status || "unknown";
 
       errorBox.style.display = "none";
