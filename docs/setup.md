@@ -94,7 +94,7 @@ The dashboard listens on port 8080. When viewing from Windows, run this in **Win
 ssh -N -L 8081:127.0.0.1:8080 debby@YOUR_LINUX_HOST
 ```
 
-Keep the SSH process open and visit `http://127.0.0.1:8081/` on Windows. The dashboard currently binds all Linux interfaces; restrict access through your network/firewall for this demo.
+Keep the SSH process open and visit `http://127.0.0.1:8081/` on Windows. The dashboard binds only to Linux localhost (`127.0.0.1`), so remote access uses the SSH tunnel. Restart an already running dashboard after updating the code for the new binding to take effect.
 
 ## Reports and recovery
 
