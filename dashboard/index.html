@@ -542,6 +542,14 @@
       }
 
       const data = await response.json();
+
+      if (data.snapshot_ready === false && !data.databricks_error) {
+        document.getElementById("updated").textContent =
+          "Processing new pipeline run...";
+        errorBox.style.display = "none";
+        return;
+      }
+
       const alert = data.alert || {};
       const anomaly = (alert.anomalies || [])[0] || {};
       const investigation = data.investigation || {};

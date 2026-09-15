@@ -214,6 +214,8 @@ def investigation_snapshot(
 
 REVENUE_QUERY = """
 SELECT
+    run_id,
+    commit_sha,
     hour,
     payment_method,
     SUM(expected_revenue_cents) AS expected_revenue_cents,
@@ -222,6 +224,8 @@ SELECT
     SUM(mismatch_count) AS mismatch_count
 FROM workspace.default.current_hourly_revenue
 GROUP BY
+    run_id,
+    commit_sha,
     hour,
     payment_method
 ORDER BY
@@ -269,12 +273,30 @@ def dashboard_data() -> dict[str, Any]:
             f"{type(error).__name__}: {error}"
         )
 
+    revenue_run_ids = {
+        row.get("run_id")
+        for row in revenue
+        if row.get("run_id")
+    }
+    revenue_run_id = (
+        next(iter(revenue_run_ids))
+        if len(revenue_run_ids) == 1
+        else None
+    )
+    snapshot_ready = bool(
+        run_id
+        and revenue_run_id
+        and run_id == revenue_run_id
+    )
+
     return {
         "generated_at": datetime.now(
             timezone.utc
         ).isoformat(),
         "alert": alert,
         "revenue": revenue,
+        "revenue_run_id": revenue_run_id,
+        "snapshot_ready": snapshot_ready,
         "investigation": investigation_snapshot(run_id),
         "databricks_error": databricks_error,
     }
