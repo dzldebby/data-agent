@@ -7,6 +7,10 @@ __pycache__/
 data/
 reports/
 
-data/investigations/
-
-data/investigations/
+# Generated archives, logs and local editor files
+*.zip
+*.log
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

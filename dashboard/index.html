@@ -318,7 +318,7 @@
 
   <article class="panel summary">
   <div class="label">Revenue discrepancy</div>
-  <div id="impact" class="metric red">—</div>
+  <div id="impact" class="metric" style="color:#94a3b8">—</div>
   <div class="detail">Expected minus reported</div>
   </article>
 
@@ -339,11 +339,11 @@
   <h2>Card revenue</h2>
   <div class="legend">
   <span class="legend-item">
-  <span class="legend-line" style="background:#60a5fa"></span>
+  <span class="legend-line" style="background:#94a3b8"></span>
   Expected
   </span>
   <span class="legend-item">
-  <span class="legend-line" style="background:#fb7185"></span>
+  <span id="reported-legend-line" class="legend-line" style="background:#60a5fa"></span>
   Reported
   </span>
   </div>
@@ -380,7 +380,7 @@
 
   <article class="panel agents-panel">
   <div class="panel-heading">
-  <h2>Parallel agent investigation</h2>
+  <h2>Adaptive agent investigation</h2>
   <span id="workflow-badge" class="badge waiting">Waiting</span>
   </div>
   <div class="agent-flow">
@@ -414,6 +414,9 @@
   <div class="correlation">
   Main agent correlates run ID, commit SHA, and financial impact
   </div>
+  <h3>Evidence checks</h3>
+  <p>Actual tool requests and findings, in execution order.</p>
+  <ol id="evidence-steps" style="line-height:1.7;padding-left:24px"></ol>
   </article>
 
   <article class="panel report-panel">
@@ -445,7 +448,9 @@
     element.textContent = normalized.replaceAll("_", " ");
   }
 
-  function drawChart(rows) {
+  function drawChart(rows, status) {
+    const reportedColor =
+      status === "healthy" ? "#60a5fa" : "#fb7185";
     const svg = document.getElementById("chart");
     const cardRows = rows
       .filter(row => row.payment_method === "card")
@@ -509,10 +514,10 @@
     svg.innerHTML = `
       ${grid}
       <polyline points="${points("expected_revenue_cents")}"
-        fill="none" stroke="#60a5fa" stroke-width="3"
+        fill="none" stroke="#94a3b8" stroke-width="3"
         stroke-linecap="round" stroke-linejoin="round"/>
       <polyline points="${points("reported_revenue_cents")}"
-        fill="none" stroke="#fb7185" stroke-width="3"
+        fill="none" stroke="${reportedColor}" stroke-width="3"
         stroke-linecap="round" stroke-linejoin="round"/>
       <text x="${padding.left}" y="${height - 12}"
         fill="#91a4b3" font-size="10">${firstHour}</text>
@@ -537,10 +542,28 @@
       }
 
       const data = await response.json();
+
+      if (data.snapshot_ready === false && !data.databricks_error) {
+        document.getElementById("updated").textContent =
+          "Processing new pipeline run...";
+        errorBox.style.display = "none";
+        return;
+      }
+
       const alert = data.alert || {};
       const anomaly = (alert.anomalies || [])[0] || {};
       const investigation = data.investigation || {};
       const tools = investigation.tools || {};
+      const stepList = document.getElementById("evidence-steps");
+      stepList.replaceChildren();
+      for (const step of investigation.steps || []) {
+        const item = document.createElement("li");
+        const args = Object.entries(step.arguments || {})
+          .filter(([, value]) => value !== "")
+          .map(([key, value]) => `${key}: ${value}`).join(", ");
+        item.textContent = `${step.tool}${args ? " · " + args : ""} — ${step.status}. ${step.summary || ""}`;
+        stepList.appendChild(item);
+      }
       const status = alert.status || "unknown";
 
       errorBox.style.display = "none";
@@ -555,8 +578,10 @@
           ? "Card revenue discrepancy detected"
           : "Revenue checks are within thresholds";
 
-      document.getElementById("impact").textContent =
-        money(anomaly.current_difference_cents);
+      const impactCents = Number(anomaly.current_difference_cents || 0);
+      const impactElement = document.getElementById("impact");
+      impactElement.textContent = money(impactCents);
+      impactElement.style.color = impactCents === 0 ? "#94a3b8" : "#fb7185";
 
       document.getElementById("affected").textContent =
         Number(anomaly.current_mismatch_count || 0).toLocaleString();
@@ -615,7 +640,9 @@
         errorBox.style.display = "block";
       }
 
-      drawChart(data.revenue || []);
+      document.getElementById("reported-legend-line").style.background =
+        status === "healthy" ? "#60a5fa" : "#fb7185";
+      drawChart(data.revenue || [], status);
     } catch (error) {
       errorBox.textContent = error.message;
       errorBox.style.display = "block";

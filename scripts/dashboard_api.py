@@ -8,6 +8,7 @@ from databricks import sql
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
+from investigation_steps import read_steps
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -195,16 +196,17 @@ def investigation_snapshot(
 
     tools = tool_activity(events_path)
 
-    if report:
-        for name in tools:
-            if tools[name] == "waiting":
-                tools[name] = "completed"
+    steps = read_steps(run_id)
+    for step in steps:
+        if step["tool"] in tools:
+            tools[step["tool"]] = step["status"]
 
     return {
         "exists": True,
         "run_id": run_id,
         "state": state,
         "tools": tools,
+        "steps": steps,
         "report": report,
         "directory": str(directory),
     }
@@ -212,6 +214,8 @@ def investigation_snapshot(
 
 REVENUE_QUERY = """
 SELECT
+    run_id,
+    commit_sha,
     hour,
     payment_method,
     SUM(expected_revenue_cents) AS expected_revenue_cents,
@@ -220,6 +224,8 @@ SELECT
     SUM(mismatch_count) AS mismatch_count
 FROM workspace.default.current_hourly_revenue
 GROUP BY
+    run_id,
+    commit_sha,
     hour,
     payment_method
 ORDER BY
@@ -267,12 +273,30 @@ def dashboard_data() -> dict[str, Any]:
             f"{type(error).__name__}: {error}"
         )
 
+    revenue_run_ids = {
+        row.get("run_id")
+        for row in revenue
+        if row.get("run_id")
+    }
+    revenue_run_id = (
+        next(iter(revenue_run_ids))
+        if len(revenue_run_ids) == 1
+        else None
+    )
+    snapshot_ready = bool(
+        run_id
+        and revenue_run_id
+        and run_id == revenue_run_id
+    )
+
     return {
         "generated_at": datetime.now(
             timezone.utc
         ).isoformat(),
         "alert": alert,
         "revenue": revenue,
+        "revenue_run_id": revenue_run_id,
+        "snapshot_ready": snapshot_ready,
         "investigation": investigation_snapshot(run_id),
         "databricks_error": databricks_error,
     }
@@ -283,7 +307,7 @@ if __name__ == "__main__":
 
     uvicorn.run(
         app,
-        host="0.0.0.0",
+        host="127.0.0.1",
         port=8080,
         reload=False,
     )
